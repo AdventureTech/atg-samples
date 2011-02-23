@@ -1,0 +1,47 @@
+﻿<#@ template language="C#v3.5" debug="True" hostspecific="True" #>
+<#@ include file="Settings.ttinclude" #>
+<#@ include file="MySettings.ttinclude" #>
+<#@ include file="SchemaAS400.ttinclude" #>
+<#+
+//This is a member class definition for the template itself. 
+//	During runtime, it will make these functions available to the generator as member level functions. 
+
+//These functions are within the TemplatingHelper library... seemed easier to work with it there. 
+
+List<ColumnInfo> GetColumns(TableInfo table)
+{
+	SchemaHelper helper = new SchemaHelper();
+	helper.ConnectionString = this.ConnectionString;
+	helper.UsePrimaryKeyCheck = false;
+	helper.CommonPrimaryKeyNames = this.CommonPrimaryKeyNames;
+	return helper.GetColumns(table);
+}
+
+List<TableInfo> GetTables(string schema)
+{
+	SchemaHelper helper = new SchemaHelper();
+	helper.ConnectionString = this.ConnectionString;
+	helper.UsePrimaryKeyCheck = false;
+	helper.CommonPrimaryKeyNames = this.CommonPrimaryKeyNames;
+	helper.DefaultSchema = schema;
+	
+	var tableFilter = new StringBuilder();
+	for(int ix=0;ix<this.includeTables.Length;ix++)
+	{
+		if (ix > 0)
+			tableFilter.Append(" OR");
+			
+		tableFilter.AppendFormat(" TABLE_NAME = '{0}'", this.includeTables[ix]);
+	}
+	if (tableFilter.Length > 0)
+	{
+		tableFilter.Insert(0, "AND (");
+		tableFilter.Append(") ");
+	}		
+
+	helper.TableSelect = string.Format("SELECT * FROM QSYS2.TABLES WHERE TABLE_SCHEMA = '{0}' {1} ORDER BY TABLE_NAME", "{0}", tableFilter); //TABLE_TYPE = 'BASE_TABLE' AND
+
+	return helper.GetTables();
+}
+
+#>

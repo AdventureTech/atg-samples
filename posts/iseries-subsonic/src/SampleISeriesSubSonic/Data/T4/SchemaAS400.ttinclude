@@ -1,0 +1,403 @@
+﻿<#@ template language="C#v3.5" debug="True" hostspecific="True" #>
+<#+
+	public class SchemaHelper
+	{
+		public string ConnectionString { get; set; }
+		/// <summary>
+		/// When set to true, will query the iSeries for the table primary keys. 
+		/// </summary>
+		public bool UsePrimaryKeyCheck { get; set; }
+		/// <summary>
+		/// HACKED:  looks for this name as the primary key if an index is not found. 
+		/// </summary>
+		public string[] CommonPrimaryKeyNames { get; set; }
+
+		/// <summary>
+		/// Format string for table select. {0} = schema
+		/// </summary>
+		public string TableSelect { get; set; }
+		/// <summary>
+		/// Format string for table select. {0} = schema, {1} = table
+		/// </summary>
+		public string ColumnSelect { get; set; }
+		/// <summary>
+		/// Format string for table select. {0} = schema, {1} = table
+		/// </summary> 
+		public string IndexSelect { get; set; }
+
+		/// <summary>
+		/// Default schema override.  (try using the connection string instead). 
+		/// </summary>
+		public string DefaultSchema { get; set; }
+
+		public SchemaHelper()
+		{
+			this.DefaultSchema = null;
+			this.ConnectionString = null;
+			this.CommonPrimaryKeyNames = null;
+			this.UsePrimaryKeyCheck = true;
+			this.TableSelect = "SELECT * FROM QSYS2.TABLES WHERE TABLE_SCHEMA = '{0}' AND TABLE_NAME LIKE '%W' ORDER BY TABLE_NAME";
+			this.ColumnSelect = "SELECT * FROM QSYS2.COLUMNS WHERE TABLE_SCHEMA = '{0}' AND TABLE_NAME = '{1}' ORDER BY COLUMN_NAME";
+			this.IndexSelect = "SELECT DISTINCT C.TABLE_SCHEMA, C.TABLE_NAME, C.COLUMN_NAME, C.ORDINAL_POSITION, C.DATA_TYPE, C.COLUMN_DEFAULT, C.IS_NULLABLE, C.LENGTH, C.NUMERIC_SCALE,C.IS_IDENTITY, TC.TYPE AS TABCONSTTYPE, K.COLSEQ FROM QSYS2.SYSCOLUMNS C JOIN (QSYS2.SYSKEYS K JOIN QSYS2.SYSCST TC ON (K.INDEX_SCHEMA = TC.TABLE_SCHEMA AND K.INDEX_NAME = TC.TABLE_NAME AND TC.TYPE = 'PRIMARY KEY')) ON (C.TABLE_SCHEMA = K.INDEX_SCHEMA AND C.TABLE_NAME = K.INDEX_NAME AND C.COLUMN_NAME = K.COLUMN_NAME) WHERE C.TABLE_SCHEMA = '{0}' AND C.TABLE_NAME = '{1}' ORDER BY C.ORDINAL_POSITION";
+		}
+
+		public List<TableInfo> GetTables()
+		{
+			List<TableInfo> tables = new List<TableInfo>();
+			using (iDB2Connection conn = new iDB2Connection(this.ConnectionString))
+			{
+				conn.Open();
+				string sql = string.Format(this.TableSelect, this.DefaultSchema);
+				iDB2Command cmd = new iDB2Command(sql, conn);
+				IDataReader reader = cmd.ExecuteReader();
+				while (reader.Read())
+				{
+					TableInfo info = new TableInfo();
+					info.Name = reader.GetString(reader.GetOrdinal("TABLE_NAME")).Trim();
+					
+					info.Schema = reader.GetString(reader.GetOrdinal("TABLE_SCHEMA")).Trim();
+					info.Columns = GetColumns(info); //opens a second connection
+					tables.Add(info);
+				}
+
+				conn.Close();
+			}
+			return tables;
+		}
+
+		public List<ColumnInfo> GetColumns(TableInfo table)
+		{
+			List<ColumnInfo> columns = new List<ColumnInfo>();
+			using (iDB2Connection conn = new iDB2Connection(this.ConnectionString))
+			{
+				conn.Open();
+
+				//first go get the index for the table if it exists. 
+				string indexName = null; //always assuming just one for now. 
+				if (this.UsePrimaryKeyCheck)
+				{
+					string ixSql = string.Format(this.IndexSelect, table.Schema, table.Name);
+					iDB2Command ixCmd = new iDB2Command(ixSql, conn);
+					IDataReader ixReader = ixCmd.ExecuteReader();
+					if (ixReader.Read())
+					{
+						indexName = ixReader.GetString(ixReader.GetOrdinal("COLUMN_NAME")).Trim();
+					}
+				}
+
+				string sql = string.Format(this.ColumnSelect, table.Schema, table.Name);
+				iDB2Command cmd = new iDB2Command(sql, conn);
+				IDataReader reader = cmd.ExecuteReader();
+
+				while (reader.Read())
+				{
+					object value = null; //placeholder. 
+
+					ColumnInfo info = new ColumnInfo();
+					info.Name = reader.GetString(reader.GetOrdinal("COLUMN_NAME")).Trim();
+					info.OriginalType = reader.GetString(reader.GetOrdinal("DATA_TYPE")).Trim();
+
+					value = GetColumnValue(reader, "CHARACTER_MAXIMUM_LENGTH");
+					if (value != null)
+						info.Length = (int)value;
+
+					value = GetColumnValue(reader, "IS_NULLABLE");
+					if (value != null)
+						info.IsNullable = value.ToString().Trim() == "YES";
+
+					value = GetColumnValue(reader, "COLUMN_DEFAULT");
+					if (value != null)
+						info.DefaultValue = value.ToString().Trim().Replace("'", string.Empty);
+
+					value = GetColumnValue(reader, "NUMERIC_PRECISION");
+					if (value != null)
+						info.Precision = int.Parse(value.ToString().Trim());
+
+					value = GetColumnValue(reader, "NUMERIC_SCALE");
+					if (value != null)
+						info.Scale = int.Parse(value.ToString().Trim());
+
+					if (string.IsNullOrEmpty(indexName) && this.CommonPrimaryKeyNames != null && this.CommonPrimaryKeyNames.Length > 0)
+					{
+						if (this.CommonPrimaryKeyNames.Where(o=>o.ToUpper() == info.Name.ToUpper()).Count() > 0)
+							indexName = info.Name;
+					}
+
+					if (!string.IsNullOrEmpty(indexName) && info.Name.ToUpper() == indexName.ToUpper())
+						info.IsPrimaryKey = true;
+
+					columns.Add(info);
+				}
+				conn.Close();
+			}
+			return columns;
+		}
+
+		public object GetColumnValue(IDataReader reader, string columnName)
+		{
+			object value = null;
+			int ix = reader.GetOrdinal(columnName);
+			if (!reader.IsDBNull(ix))
+				value = reader.GetValue(ix);
+			return value;
+		}
+	}
+
+	public class TableInfo
+	{
+		string _CodeFriendlyName;
+
+		public string Name { get; set; }
+		public string Schema { get; set; }
+		public List<ColumnInfo> Columns { get; set; }
+
+		public string CodeFriendlyName
+		{
+			get
+			{
+				if (string.IsNullOrEmpty(_CodeFriendlyName))
+					_CodeFriendlyName = GetCodeFriendlyString(this.Name);
+				return _CodeFriendlyName;
+			}
+		}
+
+		public ColumnInfo PrimaryKeyColumn
+		{
+			get
+			{
+				return this.Columns.FirstOrDefault(o => o.IsPrimaryKey);
+			}
+		}
+		
+		public TableInfo()
+		{
+		}
+
+		public override string ToString()
+		{
+			return string.Format("{1} [{2}.{0}]", this.Name, this.CodeFriendlyName, this.Schema);
+		}
+	}
+
+	public class ColumnInfo
+	{
+		string _CodeFriendlyName;
+
+		public string Name { get; set; }
+		public string OriginalType { get; set; }
+		public int? Length { get; set; }
+		public int Precision {get;set;}
+		public int Scale {get;set;}
+		public bool IsNullable { get; set; }
+		public bool IsPrimaryKey { get; set; }
+		public bool IsText {
+			get 
+			{
+				var type = this.OriginalType.ToLowerInvariant().Trim();
+				switch(type)
+				{
+					case "varchar":
+					case "character":
+					case "clob":
+					case "dbclob":
+					case "rowid":
+						return true;
+					default: 
+						return false;
+				}
+				
+				return false;
+			}
+		}
+		public string DefaultValue { get; set; }
+
+		public string CodeFriendlyName
+		{
+			get
+			{
+				if (string.IsNullOrEmpty(_CodeFriendlyName))
+					_CodeFriendlyName = GetCodeFriendlyString(this.Name);
+				return _CodeFriendlyName;
+			}
+		}
+		public iDB2DbType DBType
+		{
+			get
+			{
+				switch (this.OriginalType.ToUpper())
+				{
+					case "CHARACTER":
+						return iDB2DbType.iDB2Char;
+					case "VARCHAR":
+						return iDB2DbType.iDB2VarChar;
+					case "DECIMAL":
+						return iDB2DbType.iDB2Decimal;
+					case "NUMERIC":
+						return iDB2DbType.iDB2Numeric;
+					case "INTEGER":
+						return iDB2DbType.iDB2Integer;
+					case "GRAPHIC":
+						return iDB2DbType.iDB2Graphic;
+					case "BLOB":
+						return iDB2DbType.iDB2Blob;
+					case "BIGINT":
+						return iDB2DbType.iDB2BigInt;
+					case "BINARY":
+						return iDB2DbType.iDB2Binary;
+					case "DATE":
+						return iDB2DbType.iDB2Date;
+					case "DOUBLE":
+						return iDB2DbType.iDB2Double;
+					case "REAL":
+						return iDB2DbType.iDB2Real;
+					case "ROWID":
+						return iDB2DbType.iDB2Rowid;
+					case "SMALLINT":
+						return iDB2DbType.iDB2SmallInt;
+					case "TIME":
+						return iDB2DbType.iDB2Time;
+					case "TIMESTAMP":
+						return iDB2DbType.iDB2TimeStamp;
+					case "VARBINARY":
+						return iDB2DbType.iDB2VarBinary;
+					case "VARGRAPHIC":
+						return iDB2DbType.iDB2VarGraphic;
+					default:
+						throw new NotImplementedException("Oops! forgot another type! " + this.OriginalType);
+				}
+			}
+		}
+		public string CSharpType
+		{
+			get
+			{
+				switch (this.OriginalType.ToUpper())
+				{
+					case "CHARACTER":
+					case "VARCHAR":
+					case "ROWID":
+						return "string";
+					case "DECIMAL":
+					case "NUMERIC":
+						return "decimal";
+					case "INTEGER":
+						return "int";
+					case "GRAPHIC":
+					case "BLOB":
+					case "BINARY":
+					case "VARBINARY":
+					case "VARGRAPHIC":
+						return "byte[]";
+					case "BIGINT":
+						return "long";
+					case "DATE":
+					case "TIME":
+					case "TIMESTAMP":
+						return "DateTime";
+					case "DOUBLE":
+						return "double";
+					case "REAL":
+						return "float";
+					case "SMALLINT":
+						return "short";
+					default:
+						throw new NotImplementedException("Oops! forgot another type! " + this.OriginalType);
+				}
+			}
+		}
+		
+		public string SqlType
+		{
+			get
+			{
+				switch (this.OriginalType.ToUpper())
+				{
+					case "CHARACTER":
+					case "VARCHAR":
+					case "ROWID":
+						if (this.Length > 500)
+							return "VARCHAR(MAX)";
+							
+						return "VARCHAR(" + this.Length + ')';
+					case "DECIMAL":
+					case "NUMERIC":
+							if (this.Length.HasValue && this.Length.Value > 0)
+								return "DECIMAL(" + this.Length.GetValueOrDefault().ToString() + ')';
+							else
+								return "DECIMAL";
+					case "INTEGER":
+						return "int";
+					case "GRAPHIC":
+					case "BLOB":
+					case "BINARY":
+					case "VARBINARY":
+					case "VARGRAPHIC":
+						return "VARBINARY(MAX)";
+					case "BIGINT":
+						return "BIGINT";
+					case "DATE":
+					case "TIME":
+					case "TIMESTAMP":
+						return "DATETIME";
+					case "DOUBLE":
+					case "REAL":
+						return "FLOAT";
+					case "SMALLINT":
+						return "SMALLINT";
+					default:
+						return "VARCHAR(50)"; //default unknown
+				}
+			}
+		}
+		
+		public string VBType
+		{
+			get
+			{
+				switch (this.OriginalType.ToUpper())
+				{
+					case "CHARACTER":
+					case "VARCHAR":
+					case "ROWID":
+						return "String";
+					case "DECIMAL":
+					case "NUMERIC":
+						return "Decimal";
+					case "INTEGER":
+						return "Integer";
+					case "GRAPHIC":
+					case "BLOB":
+					case "BINARY":
+					case "VARBINARY":
+					case "VARGRAPHIC":
+						return "Byte()";
+					case "BIGINT":
+						return "Long";
+					case "DATE":
+						return "Date";
+					case "TIME":
+						return "Time";
+					case "TIMESTAMP":
+						return "DateTime";
+					case "DOUBLE":
+					case "REAL":
+						return "Double";
+					case "SMALLINT":
+						return "Single";
+					default:
+						throw new NotImplementedException("Oops! forgot another type! " + this.OriginalType);
+				}
+			}
+		}
+
+		public ColumnInfo()
+		{
+		}
+
+		public override string ToString()
+		{
+			return string.Format("{1} [{0}]: {2}", this.Name, this.CodeFriendlyName, this.OriginalType);
+		}
+	}
+
+#>

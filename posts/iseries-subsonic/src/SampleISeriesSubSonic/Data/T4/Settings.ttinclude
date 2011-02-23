@@ -1,0 +1,104 @@
+﻿<#@ template language="C#v3.5" debug="True" hostspecific="True" #>
+<#@ assembly name="System.Data" #>
+<#@ assembly name="System.Xml" #>
+<#@ assembly name="System.Core.dll" #>
+<#@ assembly name="IBM.Data.DB2.iSeries" #> 
+<#@ assembly name="System.Configuration" #> 
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Diagnostics" #>
+<#@ import namespace="System.IO" #>
+<#@ import namespace="System.Data" #>
+<#@ import namespace="System.Data.Common" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.Globalization" #>
+<#@ import namespace="System.Text.RegularExpressions" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.Configuration" #> 
+<#@ import namespace="IBM.Data.DB2.iSeries" #> 
+<#+
+
+/*
+ *	Create a template called MySettings.ttinclude and set the private values to the 
+ *	ones for your system.  This file is ignored in source control, so you don't have
+ *	to worry about accidental checkins.
+ * NOTE: remove spaces from < #  and  # >  
+
+< #@ template language="C#v3.5" debug="True" hostspecific="True"# >
+< #
+user = "myusername";
+password = "mypassword";
+# >
+
+ *
+ */
+
+string user = "username";
+string password = "pass";
+string library = "MYLIB"; //specify the default library to use
+string BaseConnectionString = "DataSource=test;UserID={1};DefaultCollection={0};Naming=SQL;Password={2}";
+string ConnectionString 
+{
+	get {
+		return string.Format(BaseConnectionString, library, user, password);
+	}
+}
+string entityNamespace = "iSeries.Data";
+string[] includeTables = new string[] {
+	"File1", 
+	"File2",
+	"File3"
+};
+string[] CommonPrimaryKeyNames = new string[] {"ACCT#", "ID"};
+
+
+public static string GetCodeFriendlyString(string source)
+{
+	List<char> newName = new List<char>();
+	bool isFirstKeep = true;
+	for (int ix = 0; ix < source.Length; ix++)
+	{
+		//exclude non-alphanumeric chars. 
+		char ixChar = source[ix];
+		if ((ixChar >= 'a' && ixChar <= 'z') || (ixChar >= 'A' && ixChar <= 'Z') || (ixChar >= '0' && ixChar <= '9'))
+		{
+			if (isFirstKeep)
+			{
+				isFirstKeep = false;
+				if (ixChar >= '0' && ixChar <= '9')
+				{
+					newName.Add('N');
+					newName.Add(ixChar);
+				}
+				else
+					newName.Add(char.ToUpper(ixChar));
+			}
+			else
+				newName.Add(char.ToLower(ixChar));
+		}
+	}
+	string word = new string(newName.ToArray());
+	if (BadNames.Contains(word.ToLower()))
+		word += "0";
+	return word;
+}
+
+public static List<string> BadNames
+{
+	get
+	{
+		List<string> words = new List<string>();
+		words.Add("if");
+		words.Add("then");
+		words.Add("cdate");
+		words.Add("cint");
+		words.Add("else");
+		words.Add("new");
+		words.Add("ctype");
+		words.Add("char");
+		words.Add("string");
+		words.Add("list");
+		return words;
+	}
+}
+#>

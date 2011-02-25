@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 10.00
 # Visual Studio 2008
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SampleISeriesSubSonic", "SampleISeriesSubSonic.csproj", "{FDA19874-003F-4468-8403-1BE9041C7D8B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SampleISeriesSubSonic", "SampleISeriesSubSonic\SampleISeriesSubSonic.csproj", "{FDA19874-003F-4468-8403-1BE9041C7D8B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

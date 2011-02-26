@@ -1,0 +1,20 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SampleISeriesSubSonic", "SampleISeriesSubSonic\SampleISeriesSubSonic.csproj", "{FDA19874-003F-4468-8403-1BE9041C7D8B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FDA19874-003F-4468-8403-1BE9041C7D8B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FDA19874-003F-4468-8403-1BE9041C7D8B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FDA19874-003F-4468-8403-1BE9041C7D8B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FDA19874-003F-4468-8403-1BE9041C7D8B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
